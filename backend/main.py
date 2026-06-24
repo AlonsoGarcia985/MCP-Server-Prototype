@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from auth import build_login_url, exchange_code
 import uvicorn
-
+import secrets
 app = FastAPI()
 
 @app.get("/")
@@ -36,13 +36,26 @@ async def register_client(request: Request):
 
 @app.get("/auth/login")
 async def auth_login(state: str = ""):
+    if not state:
+        state = secrets.token_hex(16)
     url = build_login_url(state)
     return RedirectResponse(url)
 
 @app.get("/auth/callback")
 async def auth_callback(code: str, state: str):
-    tokens = await exchange_code(code, state)
-    return JSONResponse(tokens)
+    try:
+        tokens = await exchange_code(code, state)
+        return JSONResponse(tokens)
+    except ValueError as e:
+        return JSONResponse(
+            {"error": "invalid_state", "error_description": str(e)},
+            status_code=400
+        )
+    except Exception as e:
+        return JSONResponse(
+            {"error": "token_exchange_failed", "error_description": str(e)},
+            status_code=400
+        )
 
 @app.post("/mcp")
 async def mcp_endpoint(request: Request):
