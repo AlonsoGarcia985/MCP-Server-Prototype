@@ -1,0 +1,43 @@
+{
+  "realm": "mcp-proto",
+  "enabled": true,
+  "displayName": "MCP Prototype",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "clients": [
+    {
+      "clientId": "mcp-server",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://localhost:8000/auth/callback",
+        "https://*.ngrok-free.app/auth/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:8000",
+        "https://*.ngrok-free.app"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "test",
+      "enabled": true,
+      "email": "test@mail.com",
+      "firstName": "nametest",
+      "lastName": "Test",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "test123",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}
