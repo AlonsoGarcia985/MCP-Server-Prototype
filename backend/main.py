@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
-import secrets
+from auth import build_login_url, exchange_code
 import uvicorn
 
 app = FastAPI()
@@ -15,7 +15,7 @@ async def oauth_metadata():
     return {
         "issuer": base,
         "authorization_endpoint": f"{base}/auth/login",
-        "token_endpoint": f"{base}/token",
+        "token_endpoint": "http://localhost:8080/realms/mcp-proto/protocol/openid-connect/token",
         "registration_endpoint": f"{base}/register",
         "response_types_supported": ["code"],
         "code_challenge_methods_supported": ["S256"],
@@ -33,6 +33,16 @@ async def register_client(request: Request):
         "response_types": ["code"],
         "token_endpoint_auth_method": "none"
     })
+
+@app.get("/auth/login")
+async def auth_login(state: str = ""):
+    url = build_login_url(state)
+    return RedirectResponse(url)
+
+@app.get("/auth/callback")
+async def auth_callback(code: str, state: str):
+    tokens = await exchange_code(code, state)
+    return JSONResponse(tokens)
 
 @app.post("/mcp")
 async def mcp_endpoint(request: Request):
@@ -89,28 +99,6 @@ async def mcp_endpoint(request: Request):
         "jsonrpc": "2.0",
         "id": req_id,
         "error": {"code": -32601, "message": f"Método no soportado: {method}"}
-    })
-
-@app.get("/auth/login")
-async def auth_login(
-    response_type: str,
-    client_id: str,
-    redirect_uri: str,
-    code_challenge: str,
-    code_challenge_method: str,
-    state: str = ""
-):
-    fake_code = secrets.token_hex(16)
-    return RedirectResponse(
-        url=f"{redirect_uri}?code={fake_code}&state={state}"
-    )
-
-@app.post("/token")
-async def token(request: Request):
-    return JSONResponse({
-        "access_token": "fake-token-proto",
-        "token_type": "Bearer",
-        "expires_in": 3600
     })
 
 if __name__ == "__main__":
