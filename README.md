@@ -1,16 +1,16 @@
-# mcp_prototype_oAuth2.1
+# MCP Server Prototype — OAuth 2.1 + PKCE + Keycloak
 
-Prototipo de un MCP Server en Python con autenticación OAuth 2.1 + PKCE usando Keycloak como servidor de autorización. Al terminar la semana incluirá FastAPI, React y una guía de migración a Azure Entra ID.
+Prototipo de un MCP Server en Python con FastAPI y autenticación OAuth 2.1 completa con PKCE usando Keycloak como servidor de autorización. Al terminar la semana incluirá middleware JWT, validación de tokens y frontend React.
 
 ---
 
 ## ¿Qué es esto?
 
-Un prototipo funcional que demuestra cómo conectar Claude Web a un MCP Server propio con autenticación real. El usuario se loguea con sus credenciales en Keycloak y Claude puede llamar tools que saben quién es el usuario — sin que el usuario tenga que decírselo.
+Un prototipo funcional que demuestra cómo conectar Claude Web a un MCP Server propio con autenticación real. El usuario se loguea con sus credenciales en Keycloak, el servidor obtiene un JWT real, y Claude puede llamar tools que saben quién es el usuario — sin que el usuario tenga que decírselo.
 
 **Arquitectura:**
 ```
-Claude Web → ngrok → FastAPI (MCP Server) → valida JWT con Keycloak
+Claude Web → ngrok → FastAPI (MCP Server + OAuth) → Keycloak (JWT)
                           ↓
                     Keycloak (OAuth 2.1)
 ```
@@ -20,155 +20,45 @@ Claude Web → ngrok → FastAPI (MCP Server) → valida JWT con Keycloak
 ## Requisitos
 
 - Docker instalado y corriendo
+- Python 3.11 o superior
+- ngrok instalado y con cuenta gratuita en ngrok.com
 - Git
-
-Nada más. No necesitas Python, Node.js ni ninguna otra dependencia instalada en tu máquina.
 
 ---
 
-## Levantar el entorno
+## 1. Levantar Keycloak
 
 ```bash
-git clone https://github.com/tu-usuario/mcp_prototype_oAuth2.1.git
-cd mcp_prototype_oAuth2.1
 docker compose up -d
 ```
 
-Espera ~60 segundos para que Keycloak arranque e inicialice el realm automáticamente.
+Espera ~60 segundos. Keycloak estará listo en `http://localhost:8080` con el realm `mcp-proto`, el cliente `mcp-server` y el usuario de prueba `test / test123` configurados automáticamente.
 
----
-
-## Verificar que todo funciona
-
-**1. Verificar que el realm existe:**
+Verifica que funciona:
 ```bash
 curl -s http://localhost:8080/realms/mcp-proto/.well-known/openid-configuration | python3 -m json.tool | head -5
 ```
-Debe devolver JSON con `issuer`, `authorization_endpoint` y `token_endpoint`.
 
-**2. Ver logs del proceso de inicialización:**
+Ver logs del proceso de inicialización:
 ```bash
 docker compose logs keycloak-init
-```
-Debe mostrar: `Realm creado exitosamente.`
-
----
-
-## Servicios y puertos
-
-| Servicio | Puerto | URL | Para qué sirve |
-|---|---|---|---|
-| Keycloak | 8080 | http://localhost:8080 | Servidor de autenticación OAuth 2.1 |
-| FastAPI | 8000 | http://localhost:8000 | MCP Server + API (se agrega miércoles) |
-| React | 5173 | http://localhost:5173 | Frontend (se agrega viernes) |
-
----
-
-## Credenciales de desarrollo
-
-> Estas credenciales son solo para desarrollo local. Nunca usar en producción.
-
-| Componente | Usuario | Contraseña |
-|---|---|---|
-| Consola admin Keycloak | admin | admin |
-| Usuario de prueba OAuth | test | test123 |
-
-**Consola de administración:** http://localhost:8080
-
----
-
-## Estructura del proyecto
-
-```
-mcp_prototype_oAuth2.1/
-├── docker-compose.yml          ← orquesta todos los contenedores
-├── keycloak/
-│   ├── realm-export.json       ← configuración del realm, cliente OAuth y usuario
-│   └── init-realm.sh           ← script que crea el realm via API REST al arrancar
-├── backend/                    ← FastAPI + MCP Server (se agrega miércoles)
-└── frontend/                   ← React + Vite (se agrega viernes)
+# Debe mostrar: Realm creado exitosamente.
 ```
 
 ---
 
-## ¿Cómo funciona la inicialización automática?
+## 2. Levantar el servidor FastAPI
 
-Keycloak no tiene un mecanismo confiable de importación en la versión 25 cuando el volumen ya tiene datos. Por eso usamos dos contenedores:
-
-1. **keycloak** — arranca el servidor Keycloak en modo desarrollo
-2. **keycloak-init** — espera a que Keycloak esté listo y luego crea el realm `mcp-proto` via la API REST de administración
-
-El contenedor `keycloak-init` verifica si el realm ya existe antes de crearlo — si ya existe lo omite. Esto hace que el proceso sea idempotente: puedes hacer `docker compose up` varias veces sin errores.
-
----
-
-## Comandos útiles
-
-```bash
-# Levantar el entorno
-docker compose up -d
-
-# Ver logs de Keycloak
-docker compose logs keycloak
-
-# Ver logs del proceso de inicialización
-docker compose logs keycloak-init
-
-# Bajar el entorno (conserva los datos)
-docker compose down
-
-# Bajar el entorno y borrar todos los datos (empezar desde cero)
-docker compose down -v
-
-# Ver contenedores corriendo
-docker ps
-```
-
----
-
-## ¿Por qué Keycloak tarda ~60 segundos en estar listo?
-
-Keycloak es una aplicación Java. Las aplicaciones Java tardan más en arrancar que otros contenedores porque necesitan inicializar la JVM, cargar todas sus librerías en memoria e inicializar la base de datos interna. En los logs verás: `Keycloak 25.0.0 started in ~15s`. El tiempo adicional es el script de init esperando a que el servidor esté completamente listo.
-
----
-
-## Configuración del realm OAuth 2.1
-
-El realm `mcp-proto` está configurado con:
-
-- **Cliente:** `mcp-server` — tipo público (sin client secret), Authorization Code Flow habilitado
-- **PKCE:** método S256 forzado — obligatorio en OAuth 2.1 y en la especificación MCP
-- **Redirect URIs:** `http://localhost:8000/auth/callback` y `https://*.ngrok-free.app/auth/callback`
-- **SSL:** deshabilitado — solo para desarrollo local
-
----
-
-# Backend — MCP Server con FastAPI
-
-Servidor MCP mínimo en Python con FastAPI. Expone un tool `echo` que Claude Web puede llamar directamente.
-
----
-
-## Requisitos
-
-- Python 3.11 o superior
-- ngrok instalado y con cuenta (para exponer el servidor a Claude Web)
-
----
-
-## Instalación
-
+Si es la primera vez:
 ```bash
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+python main.py
 ```
 
----
-
-## Correr el servidor
-
+Las siguientes veces:
 ```bash
 cd backend
 source .venv/bin/activate
@@ -177,7 +67,7 @@ python main.py
 
 El servidor arranca en `http://localhost:8000`.
 
-Verifica que funciona:
+Verifica:
 ```bash
 curl http://localhost:8000/
 # {"status": "MCP server corriendo"}
@@ -185,24 +75,41 @@ curl http://localhost:8000/
 
 ---
 
-## Exponer con ngrok
+## 3. Exponer con ngrok
 
 En una segunda terminal:
-
 ```bash
 ngrok http 8000
 ```
 
-Copia la URL que aparece en `Forwarding`, por ejemplo:
+Copia la URL de `Forwarding`, por ejemplo:
 ```
 https://abc123.ngrok-free.dev
 ```
 
-Actualiza la variable `base` en la función `oauth_metadata()` de `main.py` con esa URL.
+Actualiza la variable `base` en `oauth_metadata()` dentro de `main.py` con esa URL.
+
+> La URL de ngrok cambia cada vez que reinicias el túnel. Cuando cambie, actualiza `main.py` y el conector en Claude Web.
 
 ---
 
-## Conectar a Claude Web
+## 4. Probar el flujo OAuth completo
+
+Abre en el browser:
+```
+http://localhost:8000/auth/login
+```
+
+Debe redirigir a la pantalla de login de Keycloak. Loguéate con `test / test123`. El servidor devolverá el JWT con el `sub`, `email` y `preferred_username` del usuario.
+
+Para inspeccionar el JWT:
+```bash
+echo "PEGA_TU_ACCESS_TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | python3 -m json.tool
+```
+
+---
+
+## 5. Conectar a Claude Web
 
 1. Ve a **claude.ai → Settings → Connectors → + → Add custom connector**
 2. Name: `MCP Proto`
@@ -214,47 +121,134 @@ Claude debe responder: `Echo: hola mundo`
 
 ---
 
+## Estructura del proyecto
+
+```
+mcp_prototype_oAuth2.1/
+├── docker-compose.yml          ← levanta Keycloak automáticamente
+├── keycloak/
+│   ├── realm-export.json       ← configuración del realm, cliente y usuario
+│   └── init-realm.sh           ← script que crea el realm via API REST
+├── backend/
+│   ├── main.py                 ← servidor FastAPI + endpoints OAuth + MCP
+│   ├── auth.py                 ← lógica PKCE: verifier, challenge, exchange
+│   ├── requirements.txt        ← dependencias Python
+│   └── .venv/                  ← entorno virtual (no se sube al repo)
+└── frontend/                   ← React (se agrega viernes)
+```
+
+---
+
+## Servicios y puertos
+
+| Servicio | Puerto | URL | Para qué sirve |
+|---|---|---|---|
+| Keycloak | 8080 | http://localhost:8080 | Servidor de autenticación OAuth 2.1 |
+| FastAPI | 8000 | http://localhost:8000 | MCP Server + OAuth |
+| React | 5173 | http://localhost:5173 | Frontend (se agrega viernes) |
+
+---
+
 ## Endpoints disponibles
 
 | Endpoint | Método | Para qué sirve |
 |---|---|---|
-| `/` | GET | Verificación — confirma que el servidor corre |
-| `/.well-known/oauth-authorization-server` | GET | Requerido por Claude Web para descubrir OAuth |
+| `/` | GET | Verificación del servidor |
+| `/.well-known/oauth-authorization-server` | GET | Metadatos OAuth — Claude lo consulta al conectarse |
 | `/register` | POST | Registro dinámico de cliente OAuth |
-| `/auth/login` | GET | Inicio del flujo OAuth |
-| `/token` | POST | Obtener token de acceso |
-| `/mcp` | POST | Endpoint principal MCP — recibe llamadas de Claude |
+| `/auth/login` | GET | Inicia el flujo OAuth con PKCE — redirige a Keycloak |
+| `/auth/callback` | GET | Recibe el code de Keycloak e intercambia por JWT |
+| `/mcp` | POST | Endpoint MCP — recibe llamadas de Claude |
 
 ---
 
-## Tool disponible
+## Flujo OAuth 2.1 con PKCE
 
-| Tool | Descripción | Parámetros |
-|---|---|---|
-| `echo` | Repite el mensaje que recibe | `message: string` |
-
----
-
-## Notas importantes
-
-- La URL de ngrok cambia cada vez que reinicias el túnel — actualiza `main.py` y el conector en Claude Web cuando esto ocurra
-- El OAuth en este prototipo es mínimo y no verifica credenciales reales — se reemplaza el miércoles con Keycloak
-- El `.venv` debe estar dentro de `backend/` — no en la raíz del proyecto
-
-
-
-## Migración a producción (Azure Entra ID)
-
-Al terminar el prototipo, el código de FastAPI y React no cambia. Solo se actualizan las variables de entorno:
-
-```bash
-# Keycloak (prototipo)
-KC_BASE=http://localhost:8080/realms/mcp-proto/protocol/openid-connect
-KC_ISSUER=http://localhost:8080/realms/mcp-proto
-
-# Azure Entra ID (producción)
-KC_BASE=https://login.microsoftonline.com/TENANT_ID/oauth2/v2.0
-KC_ISSUER=https://login.microsoftonline.com/TENANT_ID/v2.0
+```
+1. Usuario abre /auth/login
+2. FastAPI genera code_verifier (secreto) y code_challenge = SHA256(verifier)
+3. FastAPI redirige a Keycloak con el code_challenge
+4. Usuario se loguea en Keycloak
+5. Keycloak redirige a /auth/callback con un code temporal
+6. FastAPI intercambia el code + code_verifier por el JWT
+7. JWT contiene sub, email y preferred_username del usuario
 ```
 
 ---
+
+## Credenciales de desarrollo
+
+> ⚠️ Solo para desarrollo local. Nunca usar en producción.
+
+| Componente | Usuario | Contraseña |
+|---|---|---|
+| Consola admin Keycloak | admin | admin |
+| Usuario de prueba OAuth | test | test123 |
+
+---
+
+## ¿Cómo funciona la inicialización automática de Keycloak?
+
+Keycloak 25 no tiene un mecanismo confiable de importación cuando el volumen ya tiene datos. Por eso usamos dos contenedores:
+
+- **keycloak** — arranca el servidor en modo desarrollo
+- **keycloak-init** — espera a que Keycloak esté listo y crea el realm `mcp-proto` via API REST
+
+El proceso es idempotente — si el realm ya existe lo omite. Puedes hacer `docker compose up` varias veces sin errores.
+
+---
+
+## Comandos útiles
+
+```bash
+# Levantar Keycloak
+docker compose up -d
+
+# Ver logs de Keycloak
+docker compose logs keycloak
+
+# Ver logs del init
+docker compose logs keycloak-init
+
+# Bajar Keycloak (conserva datos)
+docker compose down
+
+# Bajar Keycloak y borrar todo (empezar desde cero)
+docker compose down -v
+
+# Ver contenedores corriendo
+docker ps
+
+# Activar entorno virtual
+source backend/.venv/bin/activate
+
+# Correr el servidor
+cd backend && python main.py
+```
+
+---
+
+## Migración a producción (Azure Entra ID)
+
+El código de FastAPI no cambia. Solo se actualizan las URLs en `auth.py`:
+
+```python
+# Keycloak (prototipo)
+KEYCLOAK_URL = "http://localhost:8080/realms/mcp-proto/protocol/openid-connect"
+
+# Azure Entra ID (producción)
+KEYCLOAK_URL = "https://login.microsoftonline.com/TENANT_ID/oauth2/v2.0"
+```
+
+---
+
+## Estado del desarrollo
+
+| Día | Actividad | Estado |
+|---|---|---|
+| Martes | Keycloak con Docker + estructura base | ✅ |
+| Martes | Mini-prototipo A — MCP server mínimo con echo tool | ✅ |
+| Miércoles | Mini-prototipo B — /auth/login con PKCE completo | ✅ |
+| Miércoles | Flujo OAuth 2.1 completo con callback y JWT real | 🔄 En progreso |
+| Jueves | Middleware JWT + tools con contexto de usuario | ⬜ |
+| Viernes | Frontend React + manual de migración a Azure | ⬜ |
