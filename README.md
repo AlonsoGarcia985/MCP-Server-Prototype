@@ -143,6 +143,106 @@ El realm `mcp-proto` está configurado con:
 
 ---
 
+# Backend — MCP Server con FastAPI
+
+Servidor MCP mínimo en Python con FastAPI. Expone un tool `echo` que Claude Web puede llamar directamente.
+
+---
+
+## Requisitos
+
+- Python 3.11 o superior
+- ngrok instalado y con cuenta (para exponer el servidor a Claude Web)
+
+---
+
+## Instalación
+
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+---
+
+## Correr el servidor
+
+```bash
+cd backend
+source .venv/bin/activate
+python main.py
+```
+
+El servidor arranca en `http://localhost:8000`.
+
+Verifica que funciona:
+```bash
+curl http://localhost:8000/
+# {"status": "MCP server corriendo"}
+```
+
+---
+
+## Exponer con ngrok
+
+En una segunda terminal:
+
+```bash
+ngrok http 8000
+```
+
+Copia la URL que aparece en `Forwarding`, por ejemplo:
+```
+https://abc123.ngrok-free.dev
+```
+
+Actualiza la variable `base` en la función `oauth_metadata()` de `main.py` con esa URL.
+
+---
+
+## Conectar a Claude Web
+
+1. Ve a **claude.ai → Settings → Connectors → + → Add custom connector**
+2. Name: `MCP Proto`
+3. Remote MCP server URL: `https://[tu-url-ngrok]/mcp`
+4. Haz clic en **Add** y luego **Connect**
+5. En el chat escribe: `usa el tool echo con el mensaje hola mundo`
+
+Claude debe responder: `Echo: hola mundo`
+
+---
+
+## Endpoints disponibles
+
+| Endpoint | Método | Para qué sirve |
+|---|---|---|
+| `/` | GET | Verificación — confirma que el servidor corre |
+| `/.well-known/oauth-authorization-server` | GET | Requerido por Claude Web para descubrir OAuth |
+| `/register` | POST | Registro dinámico de cliente OAuth |
+| `/auth/login` | GET | Inicio del flujo OAuth |
+| `/token` | POST | Obtener token de acceso |
+| `/mcp` | POST | Endpoint principal MCP — recibe llamadas de Claude |
+
+---
+
+## Tool disponible
+
+| Tool | Descripción | Parámetros |
+|---|---|---|
+| `echo` | Repite el mensaje que recibe | `message: string` |
+
+---
+
+## Notas importantes
+
+- La URL de ngrok cambia cada vez que reinicias el túnel — actualiza `main.py` y el conector en Claude Web cuando esto ocurra
+- El OAuth en este prototipo es mínimo y no verifica credenciales reales — se reemplaza el miércoles con Keycloak
+- El `.venv` debe estar dentro de `backend/` — no en la raíz del proyecto
+
+
+
 ## Migración a producción (Azure Entra ID)
 
 Al terminar el prototipo, el código de FastAPI y React no cambia. Solo se actualizan las variables de entorno:
