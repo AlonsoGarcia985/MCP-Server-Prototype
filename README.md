@@ -257,6 +257,27 @@ El campo `sub` del JWT de Azure es el mismo `azure_id` que ya existe en la base 
 | `unauthorized_client` al obtener token | El cliente `mcp-server` no tiene Direct Access Grants | Usar `client_id=admin-cli` para pruebas manuales con curl |
 | La URL de ngrok cambió | ngrok gratuito cambia la URL al reiniciar | Actualizar `base` en `oauth_metadata()` y `REDIRECT_URI` en `auth.py` |
 
+
+## Variables de entorno
+
+Crea el archivo `backend/.env` con estas variables antes de correr el servidor:
+
+```env
+# URL base de Keycloak incluyendo el realm
+KEYCLOAK_BASE_URL=http://localhost:8080/realms/mcp-proto
+
+# URL del callback OAuth — debe coincidir con la URL de ngrok actual
+REDIRECT_URI=https://TU-URL-NGROK.ngrok-free.app/auth/callback
+
+# URL pública del servidor — la misma URL de ngrok
+SERVER_URL=https://TU-URL-NGROK.ngrok-free.app
+```
+
+> Hay un archivo `backend/.env.example` con los mismos campos como referencia. El `.env` real nunca se sube al repo.
+
+> Cada vez que ngrok cambia de URL, actualiza `REDIRECT_URI` y `SERVER_URL` en el `.env`.
+
+
 ## Estado del desarrollo
 
 | Día | Actividad | Estado |
