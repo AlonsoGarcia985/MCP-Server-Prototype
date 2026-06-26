@@ -7,6 +7,7 @@ from middleware import verify_token
 import json
 from pathlib import Path
 import httpx
+from datetime import datetime, timezone
 app = FastAPI()
 
 _claude_callbacks: dict[str, str] = {}
@@ -134,8 +135,25 @@ async def mcp_endpoint(request: Request):
                             "type": "object",
                             "properties": {}
                         }
+                    },
+                    {
+                        "name": "list_my_permissions",
+                        "description": "Devuelve la lista de permisos del usuario autenticado.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {}
+                        }
+                    },
+                    {
+                        "name": "get_server_info",
+                        "description": "Devuelve informacion del servidor MCP y el usuario que esta haciendo la llamada.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {}
+                        }
                     }
                 ]
+
             }
         })
 
@@ -166,12 +184,49 @@ async def mcp_endpoint(request: Request):
                         "content": [{"type": "text", "text": f"No se encontró perfil para sub: {sub}"}]
                     }
                 })
-
             return JSONResponse({
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
                     "content": [{"type": "text", "text": json.dumps(profile, ensure_ascii=False, indent=2)}]
+                }
+            })
+        if name == "list_my_permissions":
+            sub = payload.get("sub")
+            users_db = json.loads((Path(__file__).parent / "users_db.json").read_text())
+            profile = users_db.get(sub)
+
+            if not profile:
+                return JSONResponse({
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "content": [{"type": "text", "text": f"No se encontró perfil para sub: {sub}"}]
+                    }
+                })
+
+            permisos = profile.get("permisos", [])
+            return JSONResponse({
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps(permisos, ensure_ascii=False, indent=2)}]
+                }
+            })
+
+        if name == "get_server_info":
+            now = datetime.now(timezone.utc).isoformat()
+            username = payload.get("preferred_username", "desconocido")
+            return JSONResponse({
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps({
+                        "servidor": "mcp-proto",
+                        "version": "0.1.0",
+                        "timestamp": now,
+                        "llamado_por": username
+                    }, ensure_ascii=False, indent=2)}]
                 }
             })
 
