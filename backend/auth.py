@@ -15,6 +15,8 @@ def generate_challenge(verifier: str) -> str:
     digest = hashlib.sha256(verifier.encode()).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
 
+REDIRECT_URI = "https://storeroom-niece-strum.ngrok-free.dev/auth/callback"
+
 def build_login_url(state: str) -> str:
     verifier = generate_verifier()
     challenge = generate_challenge(verifier)
@@ -24,7 +26,7 @@ def build_login_url(state: str) -> str:
     params = urlencode({
         "response_type":         "code",
         "client_id":             "mcp-server",
-        "redirect_uri":          "http://localhost:8000/auth/callback",
+        "redirect_uri":          REDIRECT_URI,
         "scope":                 "openid profile email",
         "state":                 state,
         "code_challenge":        challenge,
@@ -44,10 +46,22 @@ async def exchange_code(code: str, state: str) -> dict:
             data={
                 "grant_type":    "authorization_code",
                 "client_id":     "mcp-server",
-                "redirect_uri":  "http://localhost:8000/auth/callback",
+                "redirect_uri":  REDIRECT_URI,
                 "code":          code,
                 "code_verifier": verifier,
             }
         )
     resp.raise_for_status()
     return resp.json()
+
+def build_login_url_with_challenge(state: str, code_challenge: str, redirect_uri: str, code_challenge_method: str = "S256") -> str:
+    params = urlencode({
+        "response_type":         "code",
+        "client_id":             "mcp-server",
+        "redirect_uri":          redirect_uri,
+        "scope":                 "openid profile email",
+        "state":                 state,
+        "code_challenge":        code_challenge,
+        "code_challenge_method": code_challenge_method,
+    })
+    return f"http://localhost:8080/realms/mcp-proto/protocol/openid-connect/auth?{params}"

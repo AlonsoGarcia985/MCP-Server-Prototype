@@ -13,7 +13,10 @@
       "directAccessGrantsEnabled": false,
       "redirectUris": [
         "http://localhost:8000/auth/callback",
-        "https://*.ngrok-free.app/auth/callback"
+        "https://storeroom-niece-strum.ngrok-free.dev/auth/callback",
+        "https://*.ngrok-free.app/auth/callback",
+        "https://*.ngrok-free.dev/auth/callback",
+        "https://claude.ai/api/mcp/auth_callback"
       ],
       "webOrigins": [
         "http://localhost:8000",

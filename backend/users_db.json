@@ -1,0 +1,11 @@
+{
+  "102a2968-3bdf-43e6-88a4-77b8ca0aa71d": {
+    "user_id": 1,
+    "username": "test",
+    "nombre": "Nametest Test",
+    "email": "test@mail.com",
+    "cargo": "Desarrollador",
+    "equipo": "Plataforma",
+    "permisos": ["leer_reportes", "crear_tickets"]
+  }
+}
