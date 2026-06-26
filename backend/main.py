@@ -24,6 +24,7 @@ async def oauth_metadata():
         "registration_endpoint": f"{base}/register",
         "response_types_supported": ["code"],
         "code_challenge_methods_supported": ["S256"],
+        "jwks_uri": "http://localhost:8080/realms/mcp-proto/protocol/openid-connect/certs",
         "grant_types_supported": ["authorization_code"]
     }
 
