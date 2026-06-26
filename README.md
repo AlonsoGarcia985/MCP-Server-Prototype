@@ -159,6 +159,8 @@ mcp_prototype_oAuth2.1/
 |---|---|---|
 | `echo` | Repite el mensaje que recibe | ✅ JWT válido |
 | `get_my_profile` | Devuelve el perfil del usuario autenticado | ✅ JWT válido + sub en users_db.json |
+| `list_my_permissions` | Devuelve la lista de permisos del usuario autenticado | ✅ JWT válido + sub en users_db.json |
+| `get_server_info` | Devuelve info del servidor y el usuario que hace la llamada | ✅ JWT válido |
 
 ---
 
@@ -244,6 +246,16 @@ KEYCLOAK_URL = "https://login.microsoftonline.com/TENANT_ID/v2.0"
 El campo `sub` del JWT de Azure es el mismo `azure_id` que ya existe en la base de datos de producción — el código no cambia.
 
 ---
+
+## Troubleshooting
+
+| Error | Causa | Solución |
+|---|---|---|
+| `No se encontró perfil para sub: XXX` | El sub en `users_db.json` está desactualizado | Obtener el sub correcto con la API de admin y actualizar `users_db.json` |
+| Claude no ve los tools nuevos | Claude cachea `tools/list` al conectarse | Desconectar y reconectar el conector en Settings → Connectors |
+| `Token inválido: Not enough segments` | El TOKEN en terminal está vacío | Verificar que el comando curl devuelve `access_token` antes del pipe |
+| `unauthorized_client` al obtener token | El cliente `mcp-server` no tiene Direct Access Grants | Usar `client_id=admin-cli` para pruebas manuales con curl |
+| La URL de ngrok cambió | ngrok gratuito cambia la URL al reiniciar | Actualizar `base` en `oauth_metadata()` y `REDIRECT_URI` en `auth.py` |
 
 ## Estado del desarrollo
 
