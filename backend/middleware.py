@@ -1,8 +1,13 @@
+import os
+from pathlib import Path
 import httpx
 from jose import jwt, JWTError
 from fastapi import Request, HTTPException
+from dotenv import load_dotenv
 
-KEYCLOAK_URL = "http://localhost:8080/realms/mcp-proto"
+load_dotenv(Path(__file__).parent / ".env")
+
+KEYCLOAK_URL = os.environ["KEYCLOAK_BASE_URL"]
 JWKS_URI = f"{KEYCLOAK_URL}/protocol/openid-connect/certs"
 
 # Cache de las claves públicas — se descarga una vez y se reutiliza

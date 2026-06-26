@@ -1,8 +1,16 @@
+import os
 import secrets
 import base64
 import hashlib
+from pathlib import Path
 from urllib.parse import urlencode
 import httpx
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent / ".env")
+
+KEYCLOAK_BASE_URL = os.environ["KEYCLOAK_BASE_URL"]
+REDIRECT_URI = os.environ["REDIRECT_URI"]
 
 # Temporary storage: state → code_verifier
 # In production this goes in Redis with TTL of 5 minutes
@@ -14,8 +22,6 @@ def generate_verifier() -> str:
 def generate_challenge(verifier: str) -> str:
     digest = hashlib.sha256(verifier.encode()).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
-
-REDIRECT_URI = "https://storeroom-niece-strum.ngrok-free.dev/auth/callback"
 
 def build_login_url(state: str) -> str:
     verifier = generate_verifier()
@@ -33,7 +39,7 @@ def build_login_url(state: str) -> str:
         "code_challenge_method": "S256",
     })
 
-    return f"http://localhost:8080/realms/mcp-proto/protocol/openid-connect/auth?{params}"
+    return f"{KEYCLOAK_BASE_URL}/protocol/openid-connect/auth?{params}"
 
 async def exchange_code(code: str, state: str) -> dict:
     verifier = _pending.pop(state, None)
@@ -42,7 +48,7 @@ async def exchange_code(code: str, state: str) -> dict:
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
-            "http://localhost:8080/realms/mcp-proto/protocol/openid-connect/token",
+            f"{KEYCLOAK_BASE_URL}/protocol/openid-connect/token",
             data={
                 "grant_type":    "authorization_code",
                 "client_id":     "mcp-server",
@@ -64,4 +70,4 @@ def build_login_url_with_challenge(state: str, code_challenge: str, redirect_uri
         "code_challenge":        code_challenge,
         "code_challenge_method": code_challenge_method,
     })
-    return f"http://localhost:8080/realms/mcp-proto/protocol/openid-connect/auth?{params}"
+    return f"{KEYCLOAK_BASE_URL}/protocol/openid-connect/auth?{params}"

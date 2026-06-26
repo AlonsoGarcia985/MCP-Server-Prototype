@@ -1,13 +1,21 @@
+import os
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from auth import build_login_url, exchange_code, build_login_url_with_challenge
 import uvicorn
 import secrets
-from middleware import verify_token
+from middleware import verify_token, KEYCLOAK_URL
 import json
 from pathlib import Path
 import httpx
 from datetime import datetime, timezone
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent / ".env")
+
+SERVER_URL = os.environ["SERVER_URL"]
+REDIRECT_URI = os.environ["REDIRECT_URI"]
+
 app = FastAPI()
 
 _claude_callbacks: dict[str, str] = {}
@@ -17,7 +25,7 @@ async def root():
 
 @app.get("/.well-known/oauth-authorization-server")
 async def oauth_metadata():
-    base = "https://storeroom-niece-strum.ngrok-free.dev"
+    base = SERVER_URL
     return {
         "issuer": base,
         "authorization_endpoint": f"{base}/auth/login",
@@ -25,7 +33,7 @@ async def oauth_metadata():
         "registration_endpoint": f"{base}/register",
         "response_types_supported": ["code"],
         "code_challenge_methods_supported": ["S256"],
-        "jwks_uri": "http://localhost:8080/realms/mcp-proto/protocol/openid-connect/certs",
+        "jwks_uri": f"{KEYCLOAK_URL}/protocol/openid-connect/certs",
         "grant_types_supported": ["authorization_code"]
     }
 
@@ -62,7 +70,7 @@ async def auth_login(
         # Usar el redirect_uri de Claude directamente en Keycloak
         url = build_login_url_with_challenge(state, code_challenge, redirect_uri, code_challenge_method)
     elif code_challenge:
-        url = build_login_url_with_challenge(state, code_challenge, "https://storeroom-niece-strum.ngrok-free.dev/auth/callback", code_challenge_method)
+        url = build_login_url_with_challenge(state, code_challenge, REDIRECT_URI, code_challenge_method)
     else:
         url = build_login_url(state)
 
@@ -251,7 +259,7 @@ async def token_endpoint(request: Request):
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
-            "http://localhost:8080/realms/mcp-proto/protocol/openid-connect/token",
+            f"{KEYCLOAK_URL}/protocol/openid-connect/token",
             data=data
         )
 
