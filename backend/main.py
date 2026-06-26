@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from auth import build_login_url, exchange_code
 import uvicorn
 import secrets
+from middleware import verify_token
 app = FastAPI()
 
 @app.get("/")
@@ -59,6 +60,8 @@ async def auth_callback(code: str, state: str):
 
 @app.post("/mcp")
 async def mcp_endpoint(request: Request):
+    await verify_token(request)
+
     body = await request.json()
     method = body.get("method")
     req_id = body.get("id")
