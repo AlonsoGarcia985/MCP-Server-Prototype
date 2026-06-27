@@ -1,7 +1,16 @@
 import os
+import base64
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, RedirectResponse
-from auth import build_login_url, exchange_code, build_login_url_with_challenge, exchange_code_frontend
+from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
+from auth import (
+    build_login_url,
+    exchange_code,
+    build_login_url_with_challenge,
+    exchange_code_frontend,
+    generate_verifier,
+    generate_challenge,
+    _pending,
+)
 import uvicorn
 import secrets
 from middleware import verify_token, KEYCLOAK_URL
@@ -11,7 +20,6 @@ import httpx
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -105,7 +113,6 @@ async def auth_callback(code: str, state: str):
 
 @app.get("/auth/frontend-login")
 async def frontend_login():
-    from auth import generate_verifier, generate_challenge, _pending
     state = secrets.token_hex(16)
     verifier = generate_verifier()
     challenge = generate_challenge(verifier)
@@ -285,7 +292,6 @@ _frontend_sessions: dict[str, dict] = {}
 async def frontend_callback(code: str, state: str):
     try:
         tokens = await exchange_code_frontend(code, state)
-        import base64
         raw = tokens["access_token"].split(".")[1]
         padding = 4 - len(raw) % 4
         payload = json.loads(base64.urlsafe_b64decode(raw + "=" * padding))
@@ -318,9 +324,6 @@ async def call_tool_proxy(request: Request):
     s = _frontend_sessions.get(session_id)
     if not s:
         return JSONResponse({"error": "sesion no encontrada o expirada"}, status_code=401)
-
-    # Simular el payload del JWT para reutilizar la logica de los tools
-    fake_payload = {"sub": s["sub"], "preferred_username": s["username"]}
 
     if tool_name == "echo":
         return JSONResponse({"result": f"Echo: {arguments.get('message', '')}"})
