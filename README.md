@@ -143,6 +143,39 @@ Claude debe responder con tu perfil completo.
 
 ---
 
+## 7. Frontend React (opcional)
+
+Además de Claude Web, el proyecto incluye un **frontend React** propio para interactuar con los tools desde el navegador, sin necesidad de Claude ni de ngrok. Sirve para ver el flujo de autenticación y probar los tools de forma visual.
+
+**Cómo funciona:**
+- El usuario abre el frontend, hace login con Keycloak (mismo usuario `test / test123`) y el servidor guarda una sesión en memoria identificada por un `session_id`.
+- La app muestra una tarjeta con los datos del usuario autenticado (usuario, email, `sub`, session ID).
+- Desde ahí puede llamar cualquier tool. El frontend **no llama al endpoint `/mcp` directamente**: usa el endpoint **`/api/call-tool` como proxy**, enviando el `session_id` en lugar de un JWT. El servidor recupera la identidad del usuario a partir de la sesión y ejecuta la misma lógica de los tools.
+
+> ⚠️ **Prerequisito en Keycloak:** agrega `http://localhost:8000/auth/frontend-callback` a los **Valid redirect URIs** del cliente `mcp-server` en Keycloak. Sin esto, el login del frontend falla con `Invalid redirect_uri`.
+
+**Compilar el frontend** (obligatorio antes de usarlo — FastAPI sirve la carpeta `dist/`):
+
+```bash
+cd frontend
+npm install        # solo la primera vez
+npm run build
+```
+
+**Acceder al frontend:**
+
+Con el servidor FastAPI corriendo (paso 4), abre en el navegador:
+
+```
+http://localhost:8000/frontend/
+```
+
+Haz clic en **Iniciar sesión con Keycloak**, loguéate con `test / test123` y prueba los tools desde los botones.
+
+> Las sesiones del frontend viven en memoria (`_frontend_sessions`): se pierden al reiniciar el servidor. Es un prototipo, no usar en producción.
+
+---
+
 ## Estructura del proyecto
 
 ```
@@ -160,7 +193,16 @@ mcp_prototype_oAuth2.1/
 │   ├── .env.example            ← plantilla de variables de entorno
 │   ├── requirements.txt        ← dependencias Python
 │   └── .venv/                  ← entorno virtual (no se sube al repo)
-└── frontend/                   ← React (próximamente)
+└── frontend/                   ← App React (Vite) que consume los tools
+    ├── index.html              ← punto de entrada HTML
+    ├── package.json            ← dependencias y scripts npm
+    ├── vite.config.js          ← configuración de Vite
+    ├── src/
+    │   ├── main.jsx            ← monta la app React en el DOM
+    │   ├── App.jsx            ← componente raíz, lee ?session=ID de la URL
+    │   ├── SessionCard.jsx     ← muestra usuario, sub, email y session ID
+    │   └── ToolsPanel.jsx      ← botones para llamar tools via /api/call-tool
+    └── dist/                   ← build compilado que sirve FastAPI (npm run build)
 ```
 
 ---
@@ -176,6 +218,11 @@ mcp_prototype_oAuth2.1/
 | `/auth/callback` | GET | Recibe el code de Keycloak y redirige a Claude |
 | `/token` | POST | Proxy al endpoint /token de Keycloak |
 | `/mcp` | POST | Endpoint MCP protegido — requiere JWT válido |
+| `/auth/frontend-login` | GET | Inicia el login del frontend React (genera su propio PKCE) |
+| `/auth/frontend-callback` | GET | Recibe el code de Keycloak, crea la sesión del frontend y redirige a `/frontend/?session=ID` |
+| `/api/session/{id}` | GET | Devuelve los datos del usuario de una sesión del frontend |
+| `/api/call-tool` | POST | Proxy del frontend para ejecutar un tool con el `session_id` (no usa JWT directo) |
+| `/frontend/` | GET | Sirve la app React compilada (`frontend/dist/`) |
 
 ---
 
@@ -330,4 +377,4 @@ profile = resp.json()
 | Jueves | Test de integración completo desde Claude Web | ✅ |
 | Viernes | README completo | ✅ |
 | Viernes | Guía de migración a Azure | ✅ |
-| Viernes | Frontend React | ⬜ |
+| Viernes | Frontend React (login Keycloak + panel de tools via `/api/call-tool`) | ✅ |
