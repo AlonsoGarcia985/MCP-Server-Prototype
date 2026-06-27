@@ -56,7 +56,7 @@ Cada vez que Keycloak se reinicia con `docker compose down -v`, el usuario recib
 TOKEN=$(curl -s -X POST http://localhost:8080/realms/master/protocol/openid-connect/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin&password=admin&grant_type=password&client_id=admin-cli" \
-  | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 curl -s -H "Authorization: Bearer $TOKEN" \
   http://localhost:8080/admin/realms/mcp-proto/users \
@@ -67,7 +67,29 @@ Copia el `id` que aparece y úsalo como clave en `backend/users_db.json`.
 
 ---
 
-## 3. Levantar el servidor FastAPI
+## 3. Configurar variables de entorno
+
+> ⚠️ Sin este archivo el servidor falla al arrancar con `KeyError: 'KEYCLOAK_BASE_URL'`.
+
+Crea el archivo `backend/.env`:
+
+```env
+# URL base de Keycloak incluyendo el realm
+KEYCLOAK_BASE_URL=http://localhost:8080/realms/mcp-proto
+
+# URL del callback OAuth — debe coincidir con la URL de ngrok actual
+REDIRECT_URI=https://TU-URL-NGROK.ngrok-free.app/auth/callback
+
+# URL pública del servidor — la misma URL de ngrok
+SERVER_URL=https://TU-URL-NGROK.ngrok-free.app
+```
+
+> Hay un archivo `backend/.env.example` como referencia. El `.env` real nunca se sube al repo.
+> Por ahora pon cualquier URL en `REDIRECT_URI` y `SERVER_URL` — las actualizarás en el paso 5 cuando tengas la URL de ngrok.
+
+---
+
+## 4. Levantar el servidor FastAPI
 
 Si es la primera vez:
 ```bash
@@ -93,21 +115,23 @@ curl http://localhost:8000/
 
 ---
 
-## 4. Exponer con ngrok
+## 5. Exponer con ngrok
 
 ```bash
 ngrok http 8000
 ```
 
-Copia la URL de `Forwarding` y actualiza en `main.py`:
-- La variable `base` en `oauth_metadata()`
-- La variable `REDIRECT_URI` en `auth.py`
+Copia la URL de `Forwarding` y actualiza `backend/.env`:
+- `REDIRECT_URI=https://[tu-url-ngrok]/auth/callback`
+- `SERVER_URL=https://[tu-url-ngrok]`
 
-> La URL de ngrok cambia cada vez que reinicias el túnel.
+Reinicia el servidor después de actualizar el `.env`.
+
+> La URL de ngrok cambia cada vez que reinicias el túnel — recuerda actualizar el `.env`.
 
 ---
 
-## 5. Conectar a Claude Web
+## 6. Conectar a Claude Web
 
 1. Ve a **claude.ai → Settings → Connectors → + → Add custom connector**
 2. Name: `MCP Proto`
@@ -132,9 +156,11 @@ mcp_prototype_oAuth2.1/
 │   ├── auth.py                 ← lógica PKCE: verifier, challenge, exchange
 │   ├── middleware.py           ← validación JWT con JWKS de Keycloak
 │   ├── users_db.json           ← perfiles de usuario indexados por sub
+│   ├── .env                    ← variables de entorno (no se sube al repo)
+│   ├── .env.example            ← plantilla de variables de entorno
 │   ├── requirements.txt        ← dependencias Python
 │   └── .venv/                  ← entorno virtual (no se sube al repo)
-└── frontend/                   ← React (se agrega viernes)
+└── frontend/                   ← React (próximamente)
 ```
 
 ---
@@ -233,17 +259,45 @@ cd backend && python main.py
 
 ## Migración a producción (Azure Entra ID)
 
-Solo cambian las URLs en `auth.py` y `middleware.py`:
+Solo cambian 3 cosas. El código Python no se toca.
 
-```python
-# Keycloak (prototipo)
-KEYCLOAK_URL = "http://localhost:8080/realms/mcp-proto"
+### Cambio 1 — Keycloak → Azure Entra ID
 
-# Azure Entra ID (producción)
-KEYCLOAK_URL = "https://login.microsoftonline.com/TENANT_ID/v2.0"
+Pide a IT una App Registration en Azure Portal. Te entregarán 3 valores:
+
+| Variable | Descripción |
+|---|---|
+| `TENANT_ID` | ID de tu organización en Azure |
+| `CLIENT_ID` | ID de la aplicación registrada |
+| `CLIENT_SECRET` | Secret generado en Certificates & secrets |
+
+Actualiza el `.env`:
+```env
+KEYCLOAK_BASE_URL=https://login.microsoftonline.com/TENANT_ID/oauth2/v2.0
+CLIENT_ID=tu-client-id
+CLIENT_SECRET=tu-client-secret
 ```
 
-El campo `sub` del JWT de Azure es el mismo `azure_id` que ya existe en la base de datos de producción — el código no cambia.
+### Cambio 2 — ngrok → URL fija (AWS o Azure)
+
+```env
+SERVER_URL=https://mcp.tuempresa.com
+REDIRECT_URI=https://mcp.tuempresa.com/auth/callback
+```
+
+### Cambio 3 — users_db.json → endpoint del backend
+
+Reemplazar la lectura del JSON por una llamada HTTP al backend real:
+```python
+resp = await client.get(
+    f"{BACKEND_URL}/api/usuario-por-azure-id",
+    params={"sub": sub},
+    headers={"X-API-Key": BACKEND_API_KEY}
+)
+profile = resp.json()
+```
+
+> El `sub` del JWT de Azure es el mismo `azure_id` que ya existe en la BD de producción.
 
 ---
 
@@ -253,30 +307,13 @@ El campo `sub` del JWT de Azure es el mismo `azure_id` que ya existe en la base 
 |---|---|---|
 | `No se encontró perfil para sub: XXX` | El sub en `users_db.json` está desactualizado | Obtener el sub correcto con la API de admin y actualizar `users_db.json` |
 | Claude no ve los tools nuevos | Claude cachea `tools/list` al conectarse | Desconectar y reconectar el conector en Settings → Connectors |
-| `Token inválido: Not enough segments` | El TOKEN en terminal está vacío | Verificar que el comando curl devuelve `access_token` antes del pipe |
+| `Token inválido: Not enough segments` | El TOKEN en terminal está vacío | Verificar que el comando curl usa `\|` pipe antes del python3 |
 | `unauthorized_client` al obtener token | El cliente `mcp-server` no tiene Direct Access Grants | Usar `client_id=admin-cli` para pruebas manuales con curl |
-| La URL de ngrok cambió | ngrok gratuito cambia la URL al reiniciar | Actualizar `base` en `oauth_metadata()` y `REDIRECT_URI` en `auth.py` |
+| La URL de ngrok cambió | ngrok gratuito cambia la URL al reiniciar | Actualizar `REDIRECT_URI` y `SERVER_URL` en el `.env` y reiniciar el servidor |
+| `KeyError: 'KEYCLOAK_BASE_URL'` al arrancar | El `.env` tiene placeholders en lugar de valores reales | Editar `backend/.env` y reemplazar `your-realm` con `mcp-proto` y `your-public-host` con la URL de ngrok |
+| `ERR_NGROK_8012 - connection refused` | ngrok está apuntando al puerto equivocado | Correr `ngrok http 8000` — el servidor FastAPI corre en el puerto 8000 |
 
-
-## Variables de entorno
-
-Crea el archivo `backend/.env` con estas variables antes de correr el servidor:
-
-```env
-# URL base de Keycloak incluyendo el realm
-KEYCLOAK_BASE_URL=http://localhost:8080/realms/mcp-proto
-
-# URL del callback OAuth — debe coincidir con la URL de ngrok actual
-REDIRECT_URI=https://TU-URL-NGROK.ngrok-free.app/auth/callback
-
-# URL pública del servidor — la misma URL de ngrok
-SERVER_URL=https://TU-URL-NGROK.ngrok-free.app
-```
-
-> Hay un archivo `backend/.env.example` con los mismos campos como referencia. El `.env` real nunca se sube al repo.
-
-> Cada vez que ngrok cambia de URL, actualiza `REDIRECT_URI` y `SERVER_URL` en el `.env`.
-
+---
 
 ## Estado del desarrollo
 
@@ -288,5 +325,9 @@ SERVER_URL=https://TU-URL-NGROK.ngrok-free.app
 | Miércoles | Mini-prototipo C — /auth/callback, POST /token, JWT real | ✅ |
 | Miércoles | Middleware JWT con validación JWKS | ✅ |
 | Miércoles | Mini-prototipo D — tool get_my_profile con sub del JWT | ✅ |
-| Jueves | Tools adicionales con contexto de usuario | ⬜ |
-| Viernes | Frontend React + manual de migración a Azure | ⬜ |
+| Jueves | Tools adicionales con contexto de usuario | ✅ |
+| Jueves | Endpoint /.well-known completo con jwks_uri | ✅ |
+| Jueves | Test de integración completo desde Claude Web | ✅ |
+| Viernes | README completo | ✅ |
+| Viernes | Guía de migración a Azure | ✅ |
+| Viernes | Frontend React | ⬜ |
