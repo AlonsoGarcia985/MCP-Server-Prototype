@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
-from auth import build_login_url, exchange_code, build_login_url_with_challenge
+from auth import build_login_url, exchange_code, build_login_url_with_challenge, exchange_code_frontend
 import uvicorn
 import secrets
 from middleware import verify_token, KEYCLOAK_URL
@@ -10,6 +10,8 @@ from pathlib import Path
 import httpx
 from datetime import datetime, timezone
 from dotenv import load_dotenv
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -99,6 +101,20 @@ async def auth_callback(code: str, state: str):
             {"error": "token_exchange_failed", "error_description": str(e)},
             status_code=400
         )
+    
+
+@app.get("/auth/frontend-login")
+async def frontend_login():
+    from auth import generate_verifier, generate_challenge, _pending
+    state = secrets.token_hex(16)
+    verifier = generate_verifier()
+    challenge = generate_challenge(verifier)
+    _pending[state] = verifier
+    url = build_login_url_with_challenge(
+        state, challenge,
+        "http://localhost:8000/auth/frontend-callback"
+    )
+    return RedirectResponse(url)
 
 @app.post("/mcp")
 async def mcp_endpoint(request: Request):
@@ -250,10 +266,6 @@ async def token_endpoint(request: Request):
     body = await request.form()
     data = dict(body)
 
-    # Log temporal para ver qué manda Claude
-    print("=== /token recibido ===")
-    print(data)
-
     data["client_id"] = "mcp-server"
     data.pop("client_secret", None)
 
@@ -262,11 +274,92 @@ async def token_endpoint(request: Request):
             f"{KEYCLOAK_URL}/protocol/openid-connect/token",
             data=data
         )
-
-    print("=== respuesta Keycloak ===")
-    print(resp.status_code, resp.text)
-
     return JSONResponse(resp.json(), status_code=resp.status_code)
+
+
+
+# Sesiones del frontend — se guardan cuando el usuario hace login via /auth/callback
+_frontend_sessions: dict[str, dict] = {}
+
+@app.get("/auth/frontend-callback")
+async def frontend_callback(code: str, state: str):
+    try:
+        tokens = await exchange_code_frontend(code, state)
+        import base64
+        raw = tokens["access_token"].split(".")[1]
+        padding = 4 - len(raw) % 4
+        payload = json.loads(base64.urlsafe_b64decode(raw + "=" * padding))
+        
+        session_id = secrets.token_hex(16)
+        _frontend_sessions[session_id] = {
+            "sub": payload.get("sub"),
+            "username": payload.get("preferred_username", ""),
+            "email": payload.get("email", ""),
+            "access_token": tokens["access_token"],
+        }
+        return RedirectResponse(url=f"{SERVER_URL}/frontend/?session={session_id}")
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+@app.get("/api/session/{session_id}")
+async def get_session(session_id: str):
+    s = _frontend_sessions.get(session_id)
+    if not s:
+        return JSONResponse({"error": "sesion no encontrada"}, status_code=404)
+    return {"sub": s["sub"], "username": s["username"], "email": s["email"]}
+
+@app.post("/api/call-tool")
+async def call_tool_proxy(request: Request):
+    body = await request.json()
+    session_id = body.get("session_id")
+    tool_name = body.get("tool")
+    arguments = body.get("arguments", {})
+
+    s = _frontend_sessions.get(session_id)
+    if not s:
+        return JSONResponse({"error": "sesion no encontrada o expirada"}, status_code=401)
+
+    # Simular el payload del JWT para reutilizar la logica de los tools
+    fake_payload = {"sub": s["sub"], "preferred_username": s["username"]}
+
+    if tool_name == "echo":
+        return JSONResponse({"result": f"Echo: {arguments.get('message', '')}"})
+
+    if tool_name == "get_my_profile":
+        users_db = json.loads((Path(__file__).parent / "users_db.json").read_text())
+        profile = users_db.get(s["sub"])
+        if not profile:
+            return JSONResponse({"result": f"No se encontro perfil para sub: {s['sub']}"})
+        return JSONResponse({"result": json.dumps(profile, ensure_ascii=False, indent=2)})
+
+    if tool_name == "list_my_permissions":
+        users_db = json.loads((Path(__file__).parent / "users_db.json").read_text())
+        profile = users_db.get(s["sub"])
+        if not profile:
+            return JSONResponse({"result": f"No se encontro perfil para sub: {s['sub']}"})
+        return JSONResponse({"result": json.dumps(profile.get("permisos", []), ensure_ascii=False, indent=2)})
+
+    if tool_name == "get_server_info":
+        now = datetime.now(timezone.utc).isoformat()
+        return JSONResponse({"result": json.dumps({
+            "servidor": "mcp-proto",
+            "version": "0.1.0",
+            "timestamp": now,
+            "llamado_por": s["username"]
+        }, ensure_ascii=False, indent=2)})
+
+    return JSONResponse({"error": f"Tool desconocido: {tool_name}"}, status_code=400)
+
+
+
+FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
+
+if FRONTEND_DIST.exists():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
+
+    @app.get("/frontend/")
+    async def frontend_index():
+        return FileResponse(FRONTEND_DIST / "index.html")
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

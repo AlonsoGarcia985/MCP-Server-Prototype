@@ -71,3 +71,21 @@ def build_login_url_with_challenge(state: str, code_challenge: str, redirect_uri
         "code_challenge_method": code_challenge_method,
     })
     return f"{KEYCLOAK_BASE_URL}/protocol/openid-connect/auth?{params}"
+
+async def exchange_code_frontend(code: str, state: str) -> dict:
+    verifier = _pending.pop(state, None)
+    if not verifier:
+        raise ValueError("Invalid or expired state")
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{KEYCLOAK_BASE_URL}/protocol/openid-connect/token",
+            data={
+                "grant_type": "authorization_code",
+                "client_id": "mcp-server",
+                "redirect_uri": "http://localhost:8000/auth/frontend-callback",
+                "code": code,
+                "code_verifier": verifier,
+            }
+        )
+    resp.raise_for_status()
+    return resp.json()
