@@ -1,0 +1,21 @@
+CREATE DATABASE IF NOT EXISTS mcp_prototype;
+USE mcp_prototype;
+
+
+CREATE TABLE users (
+  id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  external_id VARCHAR(128) NOT NULL UNIQUE,
+  email       VARCHAR(255) NULL,
+  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+
+CREATE TABLE inventario (
+  id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id     BIGINT UNSIGNED NOT NULL,
+  nombre_item VARCHAR(200) NOT NULL,
+  cantidad    INT NOT NULL DEFAULT 0,
+  ubicacion   VARCHAR(100) NULL,
+  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_inv_user FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB;
